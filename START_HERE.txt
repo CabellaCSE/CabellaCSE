@@ -1,0 +1,19 @@
+CSE 4.0 — ASK CSE ENGINE
+
+FAST LOCAL PREVIEW
+1. Double-click index.html.
+2. Cabella direct answers, pricing, vendors, workflow, and communications work locally.
+3. Try: Gil's phone number; How do we pay MSI?; B36 Plus; Where are renderings stored?
+
+CHATGPT MODE (server required)
+1. Install Node.js 18 or newer.
+2. Set the server environment variable OPENAI_API_KEY to Cabella's private OpenAI API key. Never put the key in index.html.
+3. In this folder run: node server.js
+4. Open http://localhost:8080
+
+SEARCH ORDER
+1. Cabella internal data first.
+2. ChatGPT industry guidance second.
+3. Current web verification third.
+
+The static file will not call OpenAI directly because that would expose the private API key.
