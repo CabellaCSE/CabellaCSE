@@ -92,19 +92,26 @@ async function ask(q){
    let ai=null;
    if(location.protocol==='http:'||location.protocol==='https:'){
      const controller=new AbortController();
-     const timer=setTimeout(()=>controller.abort(),3500);
+     const timer=setTimeout(()=>controller.abort(),30000);
      try{
        const context=buildContext(q);
        const r=await fetch('/api/ask',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({question:q,context}),signal:controller.signal});
-       if(r.ok) ai=await r.json();
-     }catch(e){} finally { clearTimeout(timer); }
+       if(r.ok){
+         ai=await r.json();
+       }else{
+         const errorText=await r.text();
+         ai={error:`API ${r.status}: ${errorText}`};
+       }
+     }catch(e){
+       ai={error:e.name==='AbortError'?'Ask CSE timed out after 30 seconds.':(e.message||'Unable to reach Ask CSE.')};
+     } finally { clearTimeout(timer); }
    }
    if(ai&&ai.answer){
      const cls=ai.source==='web'?'source-web':'source-industry';
      const label=ai.source==='web'?'Web Result':'Industry Guidance';
      $('#directAnswer').innerHTML=`<div class="answer"><div class="source-ribbon"><span class="source-tag ${cls}">${label}</span><span class="badge">ChatGPT</span></div><h2>${esc(ai.title||'Answer')}</h2><div class="lead">${formatAI(ai.answer)}</div>${ai.webQuery?`<div class="actions"><button class="btn secondary" onclick="googleSearch('${esc(ai.webQuery).replace(/'/g,"\\'")}')">Verify on the web</button></div>`:''}</div>`;
    }else{
-     $('#directAnswer').innerHTML=`<div class="answer"><div class="source-ribbon"><span class="source-tag source-industry">Industry / Web fallback</span></div><h2>Ask CSE is not connected yet.</h2><p>CSE checked Cabella first but did not find a confirmed internal answer. Once the Cloudflare OpenAI secret is added, Ask CSE will use industry knowledge and current web information when needed.</p><div class="actions"><button class="btn secondary" onclick="googleSearch('${esc(q).replace(/'/g,"\\'")}')">Search the web now</button></div></div>`;
+     $('#directAnswer').innerHTML=`<div class="answer"><div class="source-ribbon"><span class="source-tag source-industry">Industry / Web fallback</span></div><h2>Ask CSE could not complete this request.</h2><p>${esc((ai&&ai.error)||'The API responded, but no answer was returned. Please try again.')}</p><div class="actions"><button class="btn secondary" onclick="googleSearch('${esc(q).replace(/'/g,"\\'")}')">Search the web now</button></div></div>`;
    }
  }
  const sr=supporting(q);
