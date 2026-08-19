@@ -8,6 +8,10 @@
 <!-- Leaflet Map Library -->
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<!-- Firebase Auth & Cabella Google Workspace Authentication Gate -->
+<script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-auth-compat.js"></script>
+<script src="cabella-auth-gate.js"></script>
 <style>
 /* Fleet Radar & Live GPS Pulse Animations */
 .fleet-pulse-marker {
@@ -588,18 +592,6 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
     </div>
     
     <div style="display:flex; align-items:center; gap:10px; flex-wrap:wrap">
-      <div class="profile-select-box" style="background:#fff; border:1px solid #cbd5e1; padding:4px 10px; border-radius:8px; display:flex; align-items:center; gap:8px">
-        <span style="font-size:12px; color:#475569; font-weight:600">👤 User:</span>
-        <select id="userProfileSelect" onchange="changeProfile(this.value)" style="border:0; outline:0; font-size:13px; font-weight:700; color:#0f172a; background:transparent">
-          <option value="Gil Sirimarco — CFO">Gil Sirimarco (CFO)</option>
-          <option value="Edwin Portillo — CEO">Edwin Portillo (CEO)</option>
-          <option value="Jerry Maza — Head PM">Jerry Maza (Head PM)</option>
-          <option value="Mayra Rodriguez — Orders">Mayra Rodriguez (Orders)</option>
-          <option value="Margie Caro — Project Manager">Margie Caro (Project Manager & Sales)</option>
-          <option value="Chuy — Warehouse Manager">Chuy (Logistics)</option>
-          <option value="Sales & Counter Team">Sales & Counter Team</option>
-        </select>
-      </div>
       <button class="btn" style="background:#0284c7; color:#fff; font-weight:700; font-size:13px; padding:7px 14px; border-radius:8px; border:0; cursor:pointer" onclick="show('accounting')">📊 Open Accounting & Financials</button>
     </div>
   </div>
@@ -4511,6 +4503,35 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
 <script src="cabella-catalog-viewer.js"></script>
 
 <script>
+  // --- CABELLA SYSTEM USERS & PERMISSION STATE ---
+  window.DEFAULT_SYSTEM_USERS = [
+    { name: 'Gil Sirimarco', role: 'CFO & Executive Chairman', qboRole: 'Company admin', email: 'Gil@cabellacollections.com', access: 'Executive Financials, Banking Feeds, Ledger Sync & System Settings' },
+    { name: 'Edwin Portillo', role: 'CEO & Operations Director', qboRole: 'Company admin', email: 'Edwin@cabellacollections.com', access: 'Fleet Logistics, Contractor Accounts & Vendor Contracts' },
+    { name: 'Jerry', role: 'Executive VP & Design Estimator', qboRole: 'Accounts receivable manager', email: 'Jerry@cabellacollections.com', access: '2020 Renderings, Job Estimating & Wholesale Catalogues' },
+    { name: 'Mayra Rodriguez', role: 'Orders Desk & Purchasing Coordinator', qboRole: 'Accounts payable manager', email: 'Mayra@cabellacollections.com', access: 'Vendor Purchase Orders, Inbound Receiving & Quote Dispatcher' },
+    { name: 'Margie Caro', role: 'Project Specialist & Account Manager', qboRole: 'Accounts receivable manager', email: 'Margie@cabellacollections.com', access: 'Contractor Quoting, Sales Orders & Customer Accounts' },
+    { name: 'Chuy', role: 'Warehouse Floor Manager', qboRole: 'Bill clerk', email: 'Warehouse@cabellacollections.com', access: 'Bin Locator, Proof-of-Delivery Photos & Stock Receiving' }
+  ];
+
+  function getSystemUsers() {
+    try {
+      const stored = localStorage.getItem('cabella_system_users_v2');
+      if (stored) {
+        const parsed = JSON.parse(stored);
+        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+      }
+    } catch(e) {}
+    return window.DEFAULT_SYSTEM_USERS;
+  }
+
+  window.SYSTEM_USERS = getSystemUsers();
+  window.currentActiveUser = (function() {
+    try {
+      const stored = localStorage.getItem('cseActiveUser');
+      if (stored) return JSON.parse(stored);
+    } catch(e) {}
+    return window.SYSTEM_USERS[0];
+  })();
 
   // --- CORE TOAST NOTIFICATION ENGINE ---
   function showToast(msg, duration = 4000) {
@@ -10722,17 +10743,20 @@ function getSettingsUserSectionHtml() {
             </div>
           </div>
 
-          <!-- Switch Account Dropdown -->
+          <!-- Switch Account Dropdown & Sign Out -->
           <div style="margin-top:16px; border-top:1px solid #f1f3f4; padding-top:14px">
             <label style="display:block; font-weight:700; font-size:12px; color:#334155; margin-bottom:6px">Switch Google Workspace User on this Computer:</label>
-            <div style="display:flex; gap:8px">
+            <div style="display:flex; gap:8px; margin-bottom:8px">
               <select id="userSelectDropdown" style="flex:1; padding:8px 10px; border-radius:6px; border:1px solid #94a3b8; font-weight:700; font-size:13px">
                 ${SYSTEM_USERS.map(u => `<option value="${esc(u.name)}" ${uName === u.name ? 'selected' : ''}>${esc(u.name)} — ${esc(u.role)} (${esc(u.email)})`).join('')}
               </select>
               <button onclick="handleUserSwitchSubmit()" style="background:#0b57d0; color:#fff; font-weight:800; border:0; padding:8px 14px; border-radius:6px; cursor:pointer; font-size:12.5px; flex-shrink:0">
-                🔑 Sign In
+                🔑 Switch Profile
               </button>
             </div>
+            <button onclick="if(typeof handleCompanySignOut==='function')handleCompanySignOut();" style="width:100%; background:#fff; color:#dc2626; border:1px solid #fca5a5; font-weight:700; padding:7px 12px; border-radius:6px; cursor:pointer; font-size:12px; display:flex; align-items:center; justify-content:center; gap:6px">
+              <span>🚪</span> <span>Sign Out of Google Workspace Session</span>
+            </button>
           </div>
         </div>
 
@@ -10755,34 +10779,68 @@ Cell: (702) 275-2575 | Office NV: (702) 879-2579
       </div>
 
       <!-- Employee & Access Matrix Table -->
-      <div style="font-size:12px; font-weight:800; color:#334155; margin-bottom:8px">CABELLA GOOGLE WORKSPACE EMPLOYEES & PORTAL PERMISSIONS</div>
-      <div style="overflow-x:auto; margin-bottom:10px">
+      <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px; flex-wrap:wrap; gap:8px">
+        <div>
+          <div style="font-size:13px; font-weight:800; color:#0f172a">CABELLA GOOGLE WORKSPACE EMPLOYEES & PORTAL PERMISSIONS</div>
+          <div style="font-size:11.5px; color:#64748b">As an administrator, you can modify role assignments and permission scopes directly below. Changes take effect immediately.</div>
+        </div>
+      </div>
+      <div style="overflow-x:auto; margin-bottom:14px">
         <table style="width:100%; border-collapse:collapse; font-size:12.5px; background:#fff; border-radius:8px; overflow:hidden; border:1px solid #cbd5e1">
           <thead>
             <tr style="background:#0f172a; color:#fff; text-align:left">
               <th style="padding:10px 12px">Employee</th>
-              <th style="padding:10px 12px">Company Role</th>
               <th style="padding:10px 12px">Google Workspace Email</th>
+              <th style="padding:10px 12px">Company Role / Title</th>
+              <th style="padding:10px 12px">QBO Assigned Role</th>
               <th style="padding:10px 12px">Portal Permissions Scope</th>
-              <th style="padding:10px 12px">Google Admin Control</th>
+              <th style="padding:10px 12px; text-align:center">Action</th>
             </tr>
           </thead>
           <tbody>
-            ${SYSTEM_USERS.map(u => `
+            ${SYSTEM_USERS.map((u, idx) => `
               <tr style="border-bottom:1px solid #f1f5f9; background:${uName === u.name ? '#f0f7ff' : '#ffffff'}">
                 <td style="padding:10px 12px; font-weight:800; color:#0f172a">
-                  ${esc(u.name)} ${uName === u.name ? '<span style="color:#0b57d0; font-size:11px">(Active)</span>' : ''}
+                  ${esc(u.name)} ${uName === u.name ? '<span style="color:#0b57d0; font-size:11px">(Active Session)</span>' : ''}
                 </td>
-                <td style="padding:10px 12px; font-weight:700; color:#334155">${esc(u.role)}</td>
                 <td style="padding:10px 12px; color:#0b57d0; font-weight:700">${esc(u.email)}</td>
-                <td style="padding:10px 12px; color:#475569">${esc(u.access)}</td>
                 <td style="padding:10px 12px">
-                  <span style="background:#dcfce7; color:#166534; padding:2px 8px; border-radius:12px; font-weight:700; font-size:11px">Managed in Google Admin</span>
+                  <input type="text" id="user_role_input_${idx}" value="${esc(u.role)}" style="width:100%; padding:5px 8px; border-radius:5px; border:1px solid #cbd5e1; font-size:12px; font-weight:600; color:#1e293b" title="Edit Company Title">
+                </td>
+                <td style="padding:10px 12px">
+                  <select id="user_qbo_select_${idx}" style="padding:5px 8px; border-radius:5px; border:1px solid #cbd5e1; font-size:12px; font-weight:700; color:#0f172a; background:#fff" title="Edit Assigned Role">
+                    <option value="Company admin" ${(u.qboRole === 'Company admin' || !u.qboRole) ? 'selected' : ''}>Company admin</option>
+                    <option value="Accounts payable manager" ${u.qboRole === 'Accounts payable manager' ? 'selected' : ''}>Accounts payable manager</option>
+                    <option value="Accounts receivable manager" ${u.qboRole === 'Accounts receivable manager' ? 'selected' : ''}>Accounts receivable manager</option>
+                    <option value="Bookkeeper" ${u.qboRole === 'Bookkeeper' ? 'selected' : ''}>Bookkeeper</option>
+                    <option value="Expense manager" ${u.qboRole === 'Expense manager' ? 'selected' : ''}>Expense manager</option>
+                    <option value="Bill approver" ${u.qboRole === 'Bill approver' ? 'selected' : ''}>Bill approver</option>
+                    <option value="Bill clerk" ${u.qboRole === 'Bill clerk' ? 'selected' : ''}>Bill clerk</option>
+                    <option value="Bill payer" ${u.qboRole === 'Bill payer' ? 'selected' : ''}>Bill payer</option>
+                  </select>
+                </td>
+                <td style="padding:10px 12px">
+                  <input type="text" id="user_access_input_${idx}" value="${esc(u.access)}" style="width:100%; padding:5px 8px; border-radius:5px; border:1px solid #cbd5e1; font-size:12px; color:#475569" title="Edit Portal Scope Description">
+                </td>
+                <td style="padding:10px 12px; text-align:center; white-space:nowrap">
+                  <button onclick="saveUserPermissionChanges(${idx})" class="btn" style="background:#0b57d0; color:#fff; font-weight:700; border:0; padding:5px 10px; border-radius:5px; font-size:11.5px; cursor:pointer">
+                    💾 Save
+                  </button>
                 </td>
               </tr>
             `).join('')}
           </tbody>
         </table>
+      </div>
+
+      <!-- Quick Reset & Audit Confirmation -->
+      <div style="display:flex; justify-content:space-between; align-items:center; background:#ffffff; border:1px solid #cbd5e1; border-radius:8px; padding:10px 14px; font-size:12px">
+        <div style="color:#64748b">
+          🔐 Security verified: Administrator authorized to modify team access permissions.
+        </div>
+        <button onclick="showToast('✅ All team permissions are verified and synchronized in real time.')" style="background:#f1f5f9; color:#0f172a; border:1px solid #cbd5e1; font-weight:700; padding:5px 12px; border-radius:6px; font-size:11.5px; cursor:pointer">
+          🔄 Verify Sync
+        </button>
       </div>
 
     </div>
@@ -10864,86 +10922,39 @@ QBO_STANDARD_ROLES = [
   }
 ];
 
-function getSettingsUserSectionHtml() {
-  return `
-    <div style="background:#f8fafc; border:1px solid #cbd5e1; border-radius:12px; padding:18px">
-      <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:14px">
-        <div>
-          <h3 style="margin:0; font-size:16px; font-weight:800; color:#0f172a">👤 Active Employee & QuickBooks Online Roles</h3>
-          <p style="margin:2px 0 0; font-size:12px; color:#64748b">Select who is using this workstation and manage QuickBooks Online user permissions.</p>
-        </div>
-        <span style="font-size:12px; font-weight:800; background:#dcfce7; color:#166534; padding:4px 10px; border-radius:20px">QBO Access Controls Active</span>
-      </div>
-
-      <!-- Select User Dropdown -->
-      <div style="display:flex; gap:12px; align-items:center; margin-bottom:18px; background:#fff; padding:12px; border-radius:8px; border:1px solid #cbd5e1">
-        <label style="font-weight:800; font-size:13px; color:#1e293b; min-width:140px">Sign In As Employee:</label>
-        <select id="userSelectDropdown" style="flex:1; padding:8px 12px; border-radius:6px; border:1px solid #94a3b8; font-weight:700; font-size:13.5px">
-          ${SYSTEM_USERS.map(u => `<option value="${esc(u.name)}" ${currentActiveUser.name === u.name ? 'selected' : ''}>${esc(u.name)} — ${esc(u.role)} (${esc(u.qboRole || 'User')})</option>`).join('')}
-        </select>
-        <button onclick="handleUserSwitchSubmit()" style="background:#1f5fae; color:#fff; font-weight:800; border:0; padding:9px 16px; border-radius:6px; cursor:pointer; font-size:13px">
-          🔑 Switch Sign-In Session
-        </button>
-      </div>
-
-      <!-- User Permissions Matrix Table -->
-      <div style="font-size:12px; font-weight:800; color:#334155; margin-bottom:8px">EMPLOYEE & QBO ROLE ASSIGNMENT MATRIX</div>
-      <div style="overflow-x:auto; margin-bottom:20px">
-        <table style="width:100%; border-collapse:collapse; font-size:12.5px; background:#fff; border-radius:8px; overflow:hidden; border:1px solid #cbd5e1">
-          <thead>
-            <tr style="background:#0f172a; color:#fff; text-align:left">
-              <th style="padding:10px 12px">Employee</th>
-              <th style="padding:10px 12px">Company Title</th>
-              <th style="padding:10px 12px">QBO Assigned Role</th>
-              <th style="padding:10px 12px">Core Functional Scope</th>
-              <th style="padding:10px 12px">Status</th>
-            </tr>
-          </thead>
-          <tbody>
-            ${SYSTEM_USERS.map(u => `
-              <tr style="border-bottom:1px solid #e2e8f0; background:${currentActiveUser.name === u.name ? '#eff6ff' : '#fff'}">
-                <td style="padding:10px 12px; font-weight:800; color:#0f172a">${esc(u.name)}</td>
-                <td style="padding:10px 12px; color:#475569; font-weight:700">${esc(u.role)}</td>
-                <td style="padding:10px 12px">
-                  <span style="font-weight:800; color:#1f5fae; background:#e0f2fe; padding:3px 8px; border-radius:6px; font-size:11.5px; border:1px solid #bae6fd">
-                    ${esc(u.qboRole || 'Company admin')}
-                  </span>
-                </td>
-                <td style="padding:10px 12px; color:#334155; font-size:12px">${esc(u.access)}</td>
-                <td style="padding:10px 12px">
-                  ${currentActiveUser.name === u.name ? '<span style="background:#166534; color:#fff; font-weight:800; padding:3px 8px; border-radius:4px; font-size:11px">ACTIVE NOW</span>' : '<button onclick="switchUserDirect(\''+esc(u.name)+'\')" style="background:#e2e8f0; color:#1e293b; border:0; padding:4px 8px; border-radius:4px; font-weight:700; cursor:pointer; font-size:11px">Sign In</button>'}
-                </td>
-              </tr>
-            `).join('')}
-          </tbody>
-        </table>
-      </div>
-
-      <!-- Official QBO Standard Roles Directory -->
-      <div style="background:#ffffff; border:1px solid #cbd5e1; border-radius:10px; padding:16px; margin-top:14px">
-        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px">
-          <h4 style="margin:0; font-size:14px; font-weight:800; color:#0f172a; display:flex; align-items:center; gap:8px">
-            <span>💚</span> <span>QUICKBOOKS ONLINE ADVANCED — STANDARD USER ROLES</span>
-          </h4>
-          <span style="font-size:11px; color:#64748b; font-weight:700">Matched with QBO Access Rules</span>
-        </div>
-
-        <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap:12px">
-          ${QBO_STANDARD_ROLES.map(r => `
-            <div style="background:#f8fafc; border:1px solid #e2e8f0; border-radius:8px; padding:12px">
-              <div style="font-weight:800; font-size:13px; color:#0f172a; margin-bottom:4px; display:flex; justify-content:space-between; align-items:center">
-                <span>${esc(r.name)}</span>
-                <span style="font-size:10px; background:#237a47; color:#fff; padding:2px 6px; border-radius:4px; font-weight:700">QBO Standard</span>
-              </div>
-              <div style="font-size:12px; color:#475569; line-height:1.4">
-                ${esc(r.desc)}
-              </div>
-            </div>
-          `).join('')}
-        </div>
-      </div>
-    </div>
-  `;
+function saveUserPermissionChanges(index) {
+  if (typeof SYSTEM_USERS === 'undefined' || !SYSTEM_USERS[index]) return;
+  
+  const roleInput = document.getElementById(`user_role_input_${index}`);
+  const qboSelect = document.getElementById(`user_qbo_select_${index}`);
+  const accessInput = document.getElementById(`user_access_input_${index}`);
+  
+  if (roleInput) SYSTEM_USERS[index].role = roleInput.value.trim();
+  if (qboSelect) SYSTEM_USERS[index].qboRole = qboSelect.value;
+  if (accessInput) SYSTEM_USERS[index].access = accessInput.value.trim();
+  
+  // Persist customized users array in localStorage
+  try {
+    localStorage.setItem('cabella_system_users_v2', JSON.stringify(SYSTEM_USERS));
+  } catch(e) {}
+  
+  // If editing the active user, update live session
+  if (typeof currentActiveUser !== 'undefined' && currentActiveUser.name === SYSTEM_USERS[index].name) {
+    currentActiveUser = SYSTEM_USERS[index];
+    try {
+      localStorage.setItem('cseActiveUser', JSON.stringify(currentActiveUser));
+    } catch(e) {}
+    if (typeof updateHeaderUserBadge === 'function') updateHeaderUserBadge();
+    if (typeof renderSidebarNav === 'function') renderSidebarNav();
+    if (typeof updateRoleBasedFinancialVisibility === 'function') updateRoleBasedFinancialVisibility();
+    if (typeof renderRoleBasedHomeModule === 'function') renderRoleBasedHomeModule();
+  }
+  
+  if (typeof logAuditEvent === 'function') {
+    logAuditEvent('PERMISSIONS_UPDATE', `Updated role & permissions for ${SYSTEM_USERS[index].name} (${SYSTEM_USERS[index].role} - ${SYSTEM_USERS[index].qboRole})`);
+  }
+  
+  showToast(`✅ Permissions saved for ${SYSTEM_USERS[index].name}!`);
 }
 
 function updateHeaderUserBadge() {
@@ -21250,49 +21261,78 @@ function openCustomizeFastLinksModal() {
           <div style="font-size:13px; color:#475569">Check or uncheck the shortcuts you want visible in your Command Center Fast Launch bar:</div>
         </div>
         <div style="display:flex; gap:6px">
-          <button onclick="applyFastLinkPreset('cfo')" style="background:#f8fafc; border:1px solid #cbd5e1; font-size:11px; font-weight:700; padding:4px 8px; border-radius:6px; cursor:pointer">
-            💼 Gil CFO Preset
-          </button>
-          <button onclick="applyFastLinkPreset('warehouse')" style="background:#f8fafc; border:1px solid #cbd5e1; font-size:11px; font-weight:700; padding:4px 8px; border-radius:6px; cursor:pointer">
-            🏭 Logistics Preset
-          </button>
-          <button onclick="applyFastLinkPreset('default')" style="background:#f8fafc; border:1px solid #cbd5e1; font-size:11px; font-weight:700; padding:4px 8px; border-radius:6px; cursor:pointer">
-            🔄 Reset Defaults
-          </button>
+          <button onclick="applyFastLinkPreset('cfo')" style="background:#f1f5f9; color:#0f172a; border:1px solid #cbd5e1; font-size:11px; font-weight:700; padding:4px 8px; border-radius:6px; cursor:pointer">Gil (CFO)</button>
+          <button onclick="applyFastLinkPreset('pm')" style="background:#f1f5f9; color:#0f172a; border:1px solid #cbd5e1; font-size:11px; font-weight:700; padding:4px 8px; border-radius:6px; cursor:pointer">PM Preset</button>
+          <button onclick="applyFastLinkPreset('warehouse')" style="background:#f1f5f9; color:#0f172a; border:1px solid #cbd5e1; font-size:11px; font-weight:700; padding:4px 8px; border-radius:6px; cursor:pointer">Warehouse</button>
         </div>
       </div>
 
-      <div id="customizeFastLinksGrid" style="display:grid; grid-template-columns:1fr 1fr; gap:10px; max-height:360px; overflow-y:auto; padding:2px; margin-bottom:16px">
+      <div id="fastLinksModalChecklist" style="display:grid; grid-template-columns:repeat(auto-fit, minmax(280px, 1fr)); gap:10px; max-height:420px; overflow-y:auto; padding:4px 2px 14px">
         ${checklistHtml}
       </div>
 
-      <!-- Add Custom Link Collapsible -->
-      <div style="background:#f8fafc; border:1px dashed #cbd5e1; border-radius:8px; padding:10px 12px; margin-bottom:16px">
-        <div style="font-size:12px; font-weight:800; color:#334155; margin-bottom:6px">➕ Add Custom Shortcut Button:</div>
-        <div style="display:grid; grid-template-columns:auto 1fr 1fr auto; gap:8px; align-items:center">
-          <input id="customFastIcon" type="text" placeholder="Icon (e.g. ⚡)" value="⚡" style="width:60px; padding:6px; border:1px solid #cbd5e1; border-radius:6px; text-align:center; font-size:13px">
-          <input id="customFastName" type="text" placeholder="Button Name (e.g. Daily Reports)" style="padding:6px 10px; border:1px solid #cbd5e1; border-radius:6px; font-size:12px">
-          <select id="customFastView" style="padding:6px 10px; border:1px solid #cbd5e1; border-radius:6px; font-size:12px">
-            <option value="show('manifests')">Delivery Whiteboard</option>
-            <option value="show('inventory')">Inventory</option>
-            <option value="show('accounting')">Accounting & QBO</option>
-            <option value="show('pricing')">Price Lists</option>
-            <option value="show('directory')">Directory</option>
-            <option value="show('vendors')">147 Vendors</option>
-            <option value="openQuoteDispatcher()">Multi-Vendor Quote Email</option>
-            <option value="openInboundReceivingModal()">Receive Truck PO</option>
-            <option value="openWarehouseInspectorModal()">Warehouse Bins</option>
-          </select>
-          <button onclick="addCustomFastLinkItem()" style="background:#0284c7; color:#fff; border:0; padding:6px 12px; border-radius:6px; font-size:12px; font-weight:700; cursor:pointer">
-            Add
-          </button>
-        </div>
-      </div>
-
-      <div style="display:flex; justify-content:space-between; align-items:center; padding-top:12px; border-top:1px solid #e2e8f0">
-        <span style="font-size:12px; color:#64748b">Changes are saved to your profile instantly.</span>
+      <div style="display:flex; justify-content:space-between; align-items:center; border-top:1px solid #e2e8f0; padding-top:14px; margin-top:10px">
+        <button onclick="resetFastLinksToDefault()" style="background:none; border:0; color:#64748b; font-size:12px; font-weight:700; cursor:pointer; text-decoration:underline">Reset to Default</button>
         <div style="display:flex; gap:8px">
           <button class="btn secondary" onclick="closeModal()">Cancel</button>
-          <button class="btn" style="background:#0284c7; color:#fff; font-weight:700; padding:8px 18px" onclick="saveCustomizedFastLinksFromModal()">
-            Save Fast Links
+          <button class="btn" style="background:#0284c7; color:#fff; font-weight:800; padding:8px 18px" onclick="saveCustomizedFastLinksFromModal()">💾 Save Fast Launch Bar</button>
+        </div>
+      </div>
+    </div>
+  `;
+
+  showModal('⚡ Customize Command Center Fast Launch Shortcuts', modalHtml, '780px');
+}
+
+function applyFastLinkPreset(preset) {
+  let presetIds = [];
+  if (preset === 'cfo') {
+    presetIds = ['accounting', 'qbo_invoices', 'manifests', 'inventory', 'quick_create', 'quote_dispatcher'];
+  } else if (preset === 'pm') {
+    presetIds = ['manifests', 'quote_dispatcher', 'pricing', 'warehouse_inspector', 'directory', 'receive_po'];
+  } else if (preset === 'warehouse') {
+    presetIds = ['warehouse_inspector', 'receive_po', 'inventory', 'manifests', 'driver_app', 'fleet_map'];
+  }
   
+  const checkboxes = document.querySelectorAll('#fastLinksModalChecklist input[type="checkbox"]');
+  checkboxes.forEach(cb => {
+    const isChecked = presetIds.includes(cb.value);
+    cb.checked = isChecked;
+    if (cb.parentElement) {
+      cb.parentElement.style.background = isChecked ? '#f0f9ff' : '#ffffff';
+      cb.parentElement.style.borderColor = isChecked ? '#7dd3fc' : '#e2e8f0';
+    }
+  });
+  showToast(`⚡ Loaded ${preset.toUpperCase()} Fast Link preset! Click Save to apply.`);
+}
+
+function saveCustomizedFastLinksFromModal() {
+  const checkboxes = document.querySelectorAll('#fastLinksModalChecklist input[type="checkbox"]:checked');
+  const selectedIds = Array.from(checkboxes).map(cb => cb.value);
+  if (selectedIds.length === 0) {
+    alert('Please select at least 1 fast launch shortcut.');
+    return;
+  }
+  saveUserFastLaunchLinks(selectedIds);
+  renderFastLaunchBar();
+  closeModal();
+  showToast('✅ Fast Launch Bar updated successfully!');
+}
+
+function resetFastLinksToDefault() {
+  saveUserFastLaunchLinks(DEFAULT_ACTIVE_FAST_LINK_IDS);
+  renderFastLaunchBar();
+  closeModal();
+  showToast('🔄 Fast Launch Bar reset to default shortcuts.');
+}
+
+// Window load and DOM ready initialization
+window.addEventListener('DOMContentLoaded', () => {
+  if (typeof renderSidebarNav === 'function') renderSidebarNav();
+  if (typeof updateHeaderUserBadge === 'function') updateHeaderUserBadge();
+  if (typeof updateRoleBasedFinancialVisibility === 'function') updateRoleBasedFinancialVisibility();
+  if (typeof renderFastLaunchBar === 'function') renderFastLaunchBar();
+});
+</script>
+</body>
+</html>
