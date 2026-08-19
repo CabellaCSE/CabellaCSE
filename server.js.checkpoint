@@ -1,0 +1,125 @@
+const http = require('http');
+const fs = require('fs');
+const path = require('path');
+const { GoogleGenAI } = require('@google/genai');
+const ringcentral = require('./ringcentral');
+
+const PORT = process.env.PORT || 3000;
+const HOST = '0.0.0.0';
+const ROOT = __dirname;
+const GEMINI_API_KEY = process.env.GEMINI_API_KEY || '';
+const OPENAI_API_KEY = process.env.OPENAI_API_KEY || '';
+const MODEL = process.env.OPENAI_MODEL || 'gpt-5-mini';
+
+const mime = {
+  '.html': 'text/html; charset=utf-8',
+  '.js': 'application/javascript; charset=utf-8',
+  '.css': 'text/css; charset=utf-8',
+  '.png': 'image/png',
+  '.jpg': 'image/jpeg',
+  '.jpeg': 'image/jpeg',
+  '.pdf': 'application/pdf',
+  '.xlsx': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+  '.json': 'application/json; charset=utf-8'
+};
+
+function send(res, status, body, type = 'application/json; charset=utf-8') {
+  res.writeHead(status, { 'Content-Type': type, 'Cache-Control': 'no-store' });
+  res.end(body);
+}
+
+function readBody(req) {
+  return new Promise((resolve, reject) => {
+    let b = '';
+    req.on('data', d => {
+      b += d;
+      if (b.length > 1e6) req.destroy();
+    });
+    req.on('end', () => resolve(b));
+    req.on('error', reject);
+  });
+}
+
+async function askGemini(question, context) {
+  const ai = new GoogleGenAI({
+    apiKey: GEMINI_API_KEY,
+    httpOptions: {
+      headers: {
+        'User-Agent': 'aistudio-build',
+      }
+    }
+  });
+  const system = `You are Ask CSE, Cabella's employee assistant. Follow this order strictly: (1) answer from Cabella context when supported; label that as Cabella Answer. (2) If Cabella context does not answer, use general cabinet, stone, flooring, warehouse, contractor-sales, and project-management industry knowledge; label it Industry Guidance. (3) For facts that may be current, say web verification is needed and provide a concise web search query. Never invent Cabella-specific facts. Keep answers practical and direct.`;
+  const input = `QUESTION:\n${question}\n\nCABELLA CONTEXT:\n${JSON.stringify(context)}`;
+
+  const response = await ai.models.generateContent({
+    model: 'gemini-3.6-flash',
+    contents: `${system}\n\n${input}`
+  });
+
+  const answer = response.text || '';
+  const needsWeb = /web verification|current|latest|today/i.test(answer);
+  return { title: 'Ask CSE', answer, source: needsWeb ? 'web' : 'industry', webQuery: needsWeb ? question : '' };
+}
+
+async function askOpenAI(question, context) {
+  const system = `You are Ask CSE, Cabella's employee assistant. Follow this order strictly: (1) answer from Cabella context when supported; label that as Cabella Answer. (2) If Cabella context does not answer, use general cabinet, stone, flooring, warehouse, contractor-sales, and project-management industry knowledge; label it Industry Guidance. (3) For facts that may be current, say web verification is needed and provide a concise web search query. Never invent Cabella-specific facts. Keep answers practical and direct.`;
+  const input = `QUESTION:\n${question}\n\nCABELLA CONTEXT:\n${JSON.stringify(context)}`;
+  const r = await fetch('https://api.openai.com/v1/responses', {
+    method: 'POST',
+    headers: { 'Authorization': `Bearer ${OPENAI_API_KEY}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ model: MODEL, instructions: system, input, max_output_tokens: 700 })
+  });
+  if (!r.ok) throw new Error(`OpenAI ${r.status}: ${await r.text()}`);
+  const j = await r.json();
+  const answer = j.output_text || '';
+  const needsWeb = /web verification|current|latest|today/i.test(answer);
+  return { title: 'Ask CSE', answer, source: needsWeb ? 'web' : 'industry', webQuery: needsWeb ? question : '' };
+}
+
+const server = http.createServer(async (req, res) => {
+  try {
+    const u = new URL(req.url, `http://${req.headers.host || 'localhost'}`);
+    if (u.pathname === '/api/status') {
+      return send(res, 200, JSON.stringify({ openai: Boolean(OPENAI_API_KEY || GEMINI_API_KEY), model: GEMINI_API_KEY ? 'gemini-3.6-flash' : MODEL }));
+    }
+    // RingCentral Integration Endpoints
+    if (u.pathname === '/api/integrations/ringcentral/connect' && req.method === 'GET') {
+      return await ringcentral.handleConnect(req, res);
+    }
+    if (u.pathname === '/api/integrations/ringcentral/callback' && req.method === 'GET') {
+      return await ringcentral.handleCallback(req, res);
+    }
+    if (u.pathname === '/api/integrations/ringcentral/status' && req.method === 'GET') {
+      return await ringcentral.handleStatus(req, res);
+    }
+    if (u.pathname === '/api/integrations/ringcentral/disconnect' && req.method === 'POST') {
+      return await ringcentral.handleDisconnect(req, res);
+    }
+    if (u.pathname === '/api/ask' && req.method === 'POST') {
+      if (!GEMINI_API_KEY && !OPENAI_API_KEY) {
+        return send(res, 503, JSON.stringify({ error: 'Neither GEMINI_API_KEY nor OPENAI_API_KEY is configured' }));
+      }
+      const data = JSON.parse(await readBody(req) || '{}');
+      const q = String(data.question || '');
+      const ctx = data.context || {};
+      const out = GEMINI_API_KEY ? await askGemini(q, ctx) : await askOpenAI(q, ctx);
+      return send(res, 200, JSON.stringify(out));
+    }
+    let file = u.pathname === '/' ? 'index.html' : decodeURIComponent(u.pathname.slice(1));
+    file = path.normalize(file).replace(/^([.][.][/\\])+/, '');
+    let full = path.join(ROOT, file);
+    if (!full.startsWith(ROOT) || !fs.existsSync(full) || fs.statSync(full).isDirectory()) {
+      // SPA Fallback: if non-file path, fall back to index.html
+      full = path.join(ROOT, 'index.html');
+      if (!fs.existsSync(full)) {
+        return send(res, 404, 'Not found', 'text/plain; charset=utf-8');
+      }
+    }
+    send(res, 200, fs.readFileSync(full), mime[path.extname(full).toLowerCase()] || 'text/html; charset=utf-8');
+  } catch (e) {
+    send(res, 500, JSON.stringify({ error: e.message }));
+  }
+});
+
+server.listen(PORT, HOST, () => console.log(`CSE running at http://${HOST}:${PORT}`));

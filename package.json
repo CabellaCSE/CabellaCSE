@@ -1,1 +1,19 @@
-{"name":"cabella-cse","version":"4.0.0","private":true,"description":"Cabella Search Engine with local Cabella answers and optional OpenAI Responses API","scripts":{"start":"node server.js"},"engines":{"node":">=18"}}
+{
+  "name": "cabella-cse",
+  "version": "4.0.0",
+  "private": true,
+  "description": "Cabella Search Engine with local Cabella answers and optional AI search integration",
+  "scripts": {
+    "dev": "node server.js",
+    "start": "node server.js",
+    "build": "echo 'No build step required'",
+    "lint": "node -c server.js"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "dependencies": {
+    "@google/genai": "^2.15.0",
+    "firebase-admin": "^14.2.0"
+  }
+}

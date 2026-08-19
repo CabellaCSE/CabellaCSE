@@ -1,0 +1,9 @@
+{
+  "name": "CSE - Cabella Search Engine",
+  "description": "Employee search engine, delivery dispatch whiteboard, and dedicated mobile driver portal for Cabella Cabinets Stone & Flooring",
+  "requestFramePermissions": [
+    "geolocation",
+    "camera"
+  ],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

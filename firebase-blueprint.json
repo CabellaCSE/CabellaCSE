@@ -1,0 +1,55 @@
+{
+  "entities": {
+    "RingCentralAuth": {
+      "title": "RingCentral Authentication Record",
+      "description": "Encrypted server-side OAuth credentials, tokens, and metadata for RingCentral integration.",
+      "type": "object",
+      "properties": {
+        "encryptedData": {
+          "type": "string",
+          "description": "AES-256-GCM encrypted payload containing access_token, refresh_token, and token_type."
+        },
+        "iv": {
+          "type": "string",
+          "description": "Initialization vector for decryption."
+        },
+        "authTag": {
+          "type": "string",
+          "description": "Authentication tag for AES-GCM verification."
+        },
+        "expiresAt": {
+          "type": "number",
+          "description": "Unix timestamp in ms when access token expires."
+        },
+        "scope": {
+          "type": "string",
+          "description": "Granted OAuth scopes."
+        },
+        "ownerId": {
+          "type": "string",
+          "description": "RingCentral account or extension ID."
+        },
+        "connectedAt": {
+          "type": "string",
+          "description": "ISO timestamp when the connection was established."
+        },
+        "updatedAt": {
+          "type": "string",
+          "description": "ISO timestamp of the last token refresh or status update."
+        },
+        "status": {
+          "type": "string",
+          "description": "Connection status: connected, disconnected, or error.",
+          "enum": ["connected", "disconnected", "error"]
+        }
+      },
+      "required": ["encryptedData", "iv", "authTag", "status", "connectedAt"]
+    }
+  },
+  "firestore": {
+    "/integrations/{integrationId}": {
+      "schema": "RingCentralAuth",
+      "description": "Secured server-side integration configurations and encrypted tokens."
+    }
+  }
+}
