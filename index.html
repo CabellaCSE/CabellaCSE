@@ -18062,6 +18062,9 @@ function buildDispatchWhiteboardHtml(context) {
           <button class="btn" onclick="openDriverPortalModal('${activeTruckId}')" style="background: #059669; color: #ffffff; font-weight: 800; font-size: 12.5px; padding: 8px 14px; border-radius: 8px; border: 0; cursor: pointer; display: flex; align-items: center; gap: 6px; box-shadow: 0 2px 6px rgba(5,150,105,0.25)" title="Open Driver Mobile Screen with Camera & Route Optimization">
             <span>📱</span> <span>Driver Mobile App View</span>
           </button>
+          <button class="btn" onclick="openDriverShareModal('${activeTruckId}')" style="background: #0284c7; color: #ffffff; font-weight: 800; font-size: 12.5px; padding: 8px 14px; border-radius: 8px; border: 0; cursor: pointer; display: flex; align-items: center; gap: 6px; box-shadow: 0 2px 6px rgba(2,132,199,0.25)" title="Generate Direct Isolated QR Code / Link for Driver's Phone">
+            <span>📲</span> <span>Driver App QR Code</span>
+          </button>
           <button class="btn" onclick="openWhiteboardChangeNotifyModal('${manifest.deliveryDate}', '${activeTruckId}')" style="background: #f59e0b; color: #ffffff; font-weight: 800; font-size: 12.5px; padding: 8px 13px; border-radius: 8px; border: 0; cursor: pointer; display: flex; align-items: center; gap: 5px; box-shadow: 0 2px 6px rgba(245,158,11,0.25)" title="Send Instant Same-Day Schedule Change SMS to Driver">
             <span>⚡</span> <span>Send Change Alert SMS</span>
           </button>
@@ -18202,7 +18205,7 @@ let activeDriverCarrierId = 'chavez'; // 'chavez' or 'all_in' or custom
 let activeDriverDate = '2026-08-15';
 
 function openDriverPortalModal(carrierId = 'chavez') {
-  activeDriverCarrierId = carrierId === 'master' ? 'chavez' : carrierId;
+  activeDriverCarrierId = (carrierId && carrierId !== 'master') ? carrierId : 'chavez';
   const data = getDispatchData();
   activeDriverDate = data.currentManifestDate || '2026-08-15';
   
@@ -18214,7 +18217,7 @@ function openDriverPortalModal(carrierId = 'chavez') {
 }
 
 function switchDriverAppCarrier(carrierId) {
-  activeDriverCarrierId = carrierId;
+  activeDriverCarrierId = (carrierId && carrierId !== 'master') ? carrierId : 'chavez';
   renderDriverAppPortal();
 }
 
@@ -18253,7 +18256,7 @@ function renderDriverAppPortal() {
     return;
   }
 
-  // Find active truck carrier
+  // Find active truck carrier strictly
   const truck = manifest.trucks.find(t => t.id === activeDriverCarrierId) || manifest.trucks[0];
   const driverRows = truck ? truck.rows : [];
 
@@ -18291,7 +18294,7 @@ function renderDriverAppPortal() {
     cardsHtml = `
       <div style="background:#ffffff; border:1px solid #e2e8f0; border-radius:12px; padding:30px 20px; text-align:center; box-shadow:0 2px 8px rgba(0,0,0,0.04); margin-bottom:16px">
         <div style="font-size:36px; margin-bottom:8px">🚚</div>
-        <h3 style="margin:0 0 6px; font-size:17px; color:#0f172a; font-weight:800">No Pickups Scheduled for This Date</h3>
+        <h3 style="margin:0 0 6px; font-size:17px; color:#0f172a; font-weight:800">No Pickups Scheduled for ${esc(truck.name)}</h3>
         <p style="margin:0; font-size:13px; color:#64748b">Check future delivery dates above or contact Cabella Dispatch if you are expecting PO additions.</p>
       </div>
     `;
@@ -18407,13 +18410,10 @@ function renderDriverAppPortal() {
         </button>
       </div>
 
-      <!-- Carrier Switcher (if multiple trucks exist) -->
-      <div style="display:flex; gap:6px; margin-bottom:12px; overflow-x:auto; padding-bottom:4px">
-        ${manifest.trucks.map(t => `
-          <button onclick="switchDriverAppCarrier('${t.id}')" style="background:${t.id === activeDriverCarrierId ? '#0284c7' : 'rgba(255,255,255,0.1)'}; color:#ffffff; border:0; padding:6px 12px; border-radius:8px; font-size:11.5px; font-weight:800; cursor:pointer; display:inline-flex; align-items:center; gap:4px">
-            <span>${t.icon}</span> <span>${esc(t.name.split(' ')[0])}</span>
-          </button>
-        `).join('')}
+      <!-- Carrier Dedicated Portal Badge (Strict Isolation: Only this carrier's orders are displayed) -->
+      <div style="background:rgba(2,132,199,0.2); border:1px solid rgba(56,189,248,0.4); border-radius:8px; padding:6px 12px; margin-bottom:12px; display:inline-flex; align-items:center; gap:6px">
+        <span style="font-size:12px">🔒</span>
+        <span style="font-size:11.5px; font-weight:800; color:#7dd3fc">Private Carrier Channel: ${esc(truck.name)} Only</span>
       </div>
 
       <!-- Multi-Stop Turn-by-Turn Best Route Trigger -->
@@ -18432,8 +18432,8 @@ function renderDriverAppPortal() {
         <div style="font-size:11.5px; color:#e0f2fe">
           📲 <strong>Install App on Phone:</strong> In Safari/Chrome tap <em>Share (or ⋮)</em> &rarr; <strong>"Add to Home Screen"</strong>
         </div>
-        <button onclick="openDriverShareModal()" style="background:#38bdf8; color:#0f172a; border:0; font-weight:800; font-size:11px; padding:4px 10px; border-radius:6px; cursor:pointer">
-          🔗 Copy / QR Code
+        <button onclick="openDriverShareModal('${activeDriverCarrierId}')" style="background:#38bdf8; color:#0f172a; border:0; font-weight:800; font-size:11px; padding:4px 10px; border-radius:6px; cursor:pointer">
+          🔗 Carrier QR / Link
         </button>
       </div>
 
@@ -18676,40 +18676,92 @@ function dispatchChangeAlertSms(phone) {
   if (typeof showToast === 'function') showToast('📲 Same-day change SMS sent to carrier!');
 }
 
-function openDriverShareModal() {
-  const driverPortalLink = `${window.location.origin}${window.location.pathname}#driver-app`;
-  const qrCodeUrl = `https://api.qrserver.com/v1/create-qr-code/?size=180x180&data=${encodeURIComponent(driverPortalLink)}`;
+function openDriverShareModal(selectedCarrierId = 'chavez') {
+  const data = getDispatchData();
+  const currentDate = data.currentManifestDate || '2026-08-15';
+  const manifest = data.manifests[currentDate] || Object.values(data.manifests)[0];
+  const trucks = (manifest && manifest.trucks) ? manifest.trucks : [
+    { id: 'chavez', name: 'Chavez Delivery', icon: '🚛' },
+    { id: 'all_in', name: 'ALL IN Transport', icon: '🚚' },
+    { id: 'hotshot', name: 'Hotshot / Express', icon: '⚡' }
+  ];
+
+  const currentCarrierId = (selectedCarrierId && selectedCarrierId !== 'master') ? selectedCarrierId : (trucks[0]?.id || 'chavez');
+
+  // Use public preview URL or current clean origin
+  const origin = window.location.origin && window.location.origin !== 'null' && window.location.origin !== 'file://'
+    ? window.location.origin
+    : 'https://ais-pre-2dl2nbshw65v5q5e6xchxt-300531939970.us-east1.run.app';
+  const pathname = window.location.pathname || '/';
+  const driverPortalLink = `${origin}${pathname}#driver-app:${currentCarrierId}`;
+  
+  // High-contrast Google Charts QR API with direct API fallback
+  const encodedUrl = encodeURIComponent(driverPortalLink);
+  const qrCodeUrl = `https://chart.googleapis.com/chart?cht=qr&chs=220x220&chl=${encodedUrl}&choe=UTF-8&chld=L|1`;
+  const backupQrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=220x220&data=${encodedUrl}&margin=10`;
+
+  const carrierTabsHtml = trucks.map(t => {
+    const isSel = t.id === currentCarrierId;
+    return `
+      <button onclick="openDriverShareModal('${t.id}')" style="background:${isSel ? '#0284c7' : '#f1f5f9'}; color:${isSel ? '#ffffff' : '#334155'}; border:1px solid ${isSel ? '#0284c7' : '#cbd5e1'}; font-weight:800; font-size:12px; padding:7px 14px; border-radius:8px; cursor:pointer; display:inline-flex; align-items:center; gap:5px; transition:all 0.15s">
+        <span>${t.icon}</span> <span>${esc(t.name)}</span>
+      </button>
+    `;
+  }).join('');
+
+  const currentTruck = trucks.find(t => t.id === currentCarrierId) || trucks[0];
 
   const content = `
-    <div style="background:#ffffff; border-radius:10px; max-width:460px; margin:0 auto; text-align:center">
-      <div style="background:linear-gradient(135deg, #0284c7 0%, #0f172a 100%); color:#fff; padding:16px 20px; border-radius:10px 10px 0 0">
-        <h3 style="margin:0; font-size:17px; font-weight:800">📲 Open & Install on Driver's Phone</h3>
-        <p style="margin:4px 0 0; font-size:12px; color:#e0f2fe">Works instantly on iPhone (iOS Safari) & Android (Chrome)</p>
+    <div style="background:#ffffff; border-radius:12px; max-width:500px; margin:0 auto; text-align:center; font-family:system-ui, -apple-system, sans-serif">
+      <div style="background:linear-gradient(135deg, #0284c7 0%, #0f172a 100%); color:#fff; padding:18px 20px; border-radius:12px 12px 0 0">
+        <h3 style="margin:0; font-size:18px; font-weight:800">📲 Carrier-Specific Driver App Link & QR</h3>
+        <p style="margin:4px 0 0; font-size:12px; color:#e0f2fe">Each carrier receives their own isolated route sheet — no other trucks visible.</p>
       </div>
       <div style="padding:20px">
-        
-        <!-- QR Code -->
-        <div style="background:#f8fafc; border:1px solid #cbd5e1; border-radius:10px; padding:14px; display:inline-block; margin-bottom:14px">
-          <img src="${qrCodeUrl}" alt="Driver App QR Code" style="width:160px; height:160px; display:block">
-          <div style="font-size:11px; font-weight:700; color:#64748b; margin-top:6px">Scan with Phone Camera</div>
+
+        <!-- Carrier Selector Tabs for Office Dispatcher -->
+        <div style="margin-bottom:16px; text-align:left">
+          <label style="display:block; font-size:11px; font-weight:800; color:#475569; text-transform:uppercase; margin-bottom:6px">Select Carrier to Generate Direct QR:</label>
+          <div style="display:flex; gap:6px; flex-wrap:wrap">
+            ${carrierTabsHtml}
+          </div>
         </div>
 
-        <!-- Copy Link Box -->
-        <div style="margin-bottom:16px">
-          <label style="display:block; font-size:11.5px; font-weight:800; color:#0f172a; text-align:left; margin-bottom:4px">Driver Portal Direct Web Link:</label>
+        <!-- Privacy Confirmation Badge -->
+        <div style="background:#f0fdf4; border:1px solid #bbf7d0; border-radius:8px; padding:8px 12px; margin-bottom:14px; text-align:left; font-size:11.5px; color:#166534; display:flex; align-items:center; gap:8px">
+          <span style="font-size:14px">🔒</span>
+          <div><strong>Strict Isolation:</strong> Scanning this code opens <strong>${esc(currentTruck.name)}</strong> orders ONLY.</div>
+        </div>
+        
+        <!-- High Contrast QR Code Box with Error Handling -->
+        <div style="background:#ffffff; border:2px solid #0284c7; border-radius:12px; padding:12px; display:inline-block; margin-bottom:14px; box-shadow:0 4px 12px rgba(2,132,199,0.15)">
+          <img src="${qrCodeUrl}" onerror="this.onerror=null; this.src='${backupQrUrl}';" alt="Scan for ${esc(currentTruck.name)} Driver App" style="width:190px; height:190px; display:block; margin:0 auto; border-radius:6px">
+          <div style="font-size:12px; font-weight:800; color:#0f172a; margin-top:8px">📷 Scan with Phone to open ${esc(currentTruck.name)}</div>
+        </div>
+
+        <!-- Quick 1-Click Test / Open in New Window Button -->
+        <div style="margin-bottom:14px">
+          <a href="${driverPortalLink}" target="_blank" rel="noopener noreferrer" style="background:#10b981; color:#ffffff; font-size:13px; font-weight:800; padding:9px 16px; border-radius:8px; text-decoration:none; display:inline-flex; align-items:center; gap:6px; box-shadow:0 2px 6px rgba(16,185,129,0.3)">
+            <span>📱 Test ${esc(currentTruck.name)} App on this Device ↗</span>
+          </a>
+        </div>
+
+        <!-- Direct Link Box -->
+        <div style="margin-bottom:16px; text-align:left">
+          <label style="display:block; font-size:11.5px; font-weight:800; color:#0f172a; margin-bottom:4px">Or Send Direct Link to ${esc(currentTruck.name)} Driver:</label>
           <div style="display:flex; gap:6px">
-            <input id="shareDriverLinkInput" value="${driverPortalLink}" readonly style="flex:1; padding:8px 10px; font-size:12px; border:1px solid #cbd5e1; border-radius:6px; background:#f8fafc">
-            <button onclick="copyDriverPortalLink()" style="background:#0284c7; color:#fff; font-weight:800; font-size:12px; padding:8px 12px; border-radius:6px; border:0; cursor:pointer">
-              📋 Copy
+            <input id="shareDriverLinkInput" value="${driverPortalLink}" readonly style="flex:1; padding:8px 10px; font-size:12px; border:1px solid #cbd5e1; border-radius:6px; background:#f8fafc; font-weight:600; color:#0369a1">
+            <button onclick="copyDriverPortalLink()" style="background:#0284c7; color:#fff; font-weight:800; font-size:12px; padding:8px 14px; border-radius:6px; border:0; cursor:pointer; white-space:nowrap">
+              📋 Copy Link
             </button>
           </div>
         </div>
 
         <!-- 2-Step Phone Home Screen Instructions -->
-        <div style="text-align:left; background:#f0f9ff; border:1px solid #bae6fd; border-radius:8px; padding:12px 14px; font-size:12px; line-height:1.4; color:#0369a1; margin-bottom:16px">
-          <div style="font-weight:800; margin-bottom:4px">📲 How to install as a Home Screen App (No App Store password needed):</div>
-          <div><strong>• iPhone / Safari:</strong> Open link &rarr; Tap the <em>Share icon [↑]</em> at bottom &rarr; Select <strong>"Add to Home Screen"</strong>.</div>
-          <div style="margin-top:4px"><strong>• Android / Chrome:</strong> Open link &rarr; Tap the <em>Three dots [⋮]</em> at top right &rarr; Select <strong>"Install App"</strong> or <strong>"Add to Home Screen"</strong>.</div>
+        <div style="text-align:left; background:#f0f9ff; border:1px solid #bae6fd; border-radius:8px; padding:12px 14px; font-size:12px; line-height:1.45; color:#0369a1; margin-bottom:16px">
+          <div style="font-weight:800; margin-bottom:4px">📲 Driver Instructions (Save to Phone Screen):</div>
+          <div><strong>• iPhone (Safari):</strong> Scan &rarr; Tap Share <strong style="font-size:13px">[↑]</strong> &rarr; Tap <strong>"Add to Home Screen"</strong>.</div>
+          <div style="margin-top:4px"><strong>• Android (Chrome):</strong> Scan &rarr; Tap Menu <strong style="font-size:13px">[⋮]</strong> &rarr; Tap <strong>"Add to Home screen"</strong>.</div>
         </div>
 
         <div style="display:flex; justify-content:flex-end">
@@ -18718,7 +18770,7 @@ function openDriverShareModal() {
       </div>
     </div>
   `;
-  showModal('📲 Driver Mobile Installation', content, '480px');
+  showModal(`📲 ${esc(currentTruck.name)} Mobile App QR`, content, '520px');
 }
 
 function copyDriverPortalLink() {
@@ -21243,114 +21295,4 @@ function openCustomizeFastLinksModal() {
           <button class="btn secondary" onclick="closeModal()">Cancel</button>
           <button class="btn" style="background:#0284c7; color:#fff; font-weight:700; padding:8px 18px" onclick="saveCustomizedFastLinksFromModal()">
             Save Fast Links
-          </button>
-        </div>
-      </div>
-    </div>
-  `;
-
-  showModal('⚡ Customize Command Center Fast Launch', modalHtml, '680px');
-}
-
-function saveCustomizedFastLinksFromModal() {
-  const container = document.getElementById('customizeFastLinksGrid');
-  if (!container) return;
-
-  const checkboxes = container.querySelectorAll('input[type="checkbox"]');
-  const selectedIds = [];
-  checkboxes.forEach(cb => {
-    if (cb.checked) selectedIds.push(cb.value);
-  });
-
-  saveUserFastLaunchLinks(selectedIds);
-  renderFastLaunchBar();
-  closeModal();
-}
-
-function applyFastLinkPreset(preset) {
-  let targetIds = [];
-  if (preset === 'cfo') {
-    targetIds = ['manifests', 'quote_dispatcher', 'accounting', 'inventory', 'quick_create', 'worked_today'];
-  } else if (preset === 'warehouse') {
-    targetIds = ['manifests', 'warehouse_inspector', 'receive_po', 'inventory', 'fleet_map'];
-  } else {
-    targetIds = [...DEFAULT_ACTIVE_FAST_LINK_IDS];
-  }
-
-  const container = document.getElementById('customizeFastLinksGrid');
-  if (container) {
-    const checkboxes = container.querySelectorAll('input[type="checkbox"]');
-    checkboxes.forEach(cb => {
-      cb.checked = targetIds.includes(cb.value);
-      if (cb.parentElement) {
-        cb.parentElement.style.background = cb.checked ? '#f0f9ff' : '#ffffff';
-        cb.parentElement.style.borderColor = cb.checked ? '#7dd3fc' : '#e2e8f0';
-      }
-    });
-  }
-}
-
-function addCustomFastLinkItem() {
-  const icon = document.getElementById('customFastIcon')?.value.trim() || '⚡';
-  const name = document.getElementById('customFastName')?.value.trim();
-  const action = document.getElementById('customFastView')?.value || "show('manifests')";
-
-  if (!name) {
-    alert('Please enter a name for the custom button.');
-    return;
-  }
-
-  const id = 'custom_btn_' + Date.now();
-  const newItem = {
-    id,
-    name,
-    icon,
-    bg: '#0284c7',
-    color: '#fff',
-    action,
-    desc: 'Custom user shortcut to ' + name
-  };
-
-  const customLinksRaw = localStorage.getItem('cabella_custom_user_shortcuts_v1');
-  let customLinks = [];
-  try {
-    if (customLinksRaw) customLinks = JSON.parse(customLinksRaw);
-  } catch(e) {}
-
-  customLinks.push(newItem);
-  localStorage.setItem('cabella_custom_user_shortcuts_v1', JSON.stringify(customLinks));
-
-  // Add to active IDs
-  const active = getUserFastLaunchLinks();
-  active.push(id);
-  saveUserFastLaunchLinks(active);
-
-  // Refresh modal
-  openCustomizeFastLinksModal();
-}
-
-// ==========================================
-// APPLICATION INITIALIZATION ON LOAD
-// ==========================================
-if (typeof renderWorkspaceTabs === 'function') {
-  renderWorkspaceTabs();
-}
-if (typeof renderFastLaunchBar === 'function') {
-  renderFastLaunchBar();
-}
-
-window.addEventListener('DOMContentLoaded', function() {
-  if (typeof renderWorkspaceTabs === 'function') {
-    renderWorkspaceTabs();
-  }
-  if (typeof renderFastLaunchBar === 'function') {
-    renderFastLaunchBar();
-  }
-  if (typeof initHomeFleetMap === 'function') {
-    initHomeFleetMap();
-  }
-});
-
-</script>
-</body>
-</html>
+  
